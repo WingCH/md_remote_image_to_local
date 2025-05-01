@@ -11,6 +11,8 @@ import urllib.parse
 import uuid
 import shutil
 from pathlib import Path
+import concurrent.futures
+from tqdm import tqdm
 
 
 def is_url(string):
@@ -68,8 +70,17 @@ def extract_image_urls(markdown_content):
     return urls
 
 
-def download_image(url, save_dir):
-    """Download image and return the save path"""
+def download_image(url_info):
+    """Download image and return the save path
+    
+    Args:
+        url_info: tuple containing (url, save_dir)
+    
+    Returns:
+        tuple: (url, filepath or None)
+    """
+    url, save_dir = url_info
+    
     # Create save directory (if it doesn't exist)
     os.makedirs(save_dir, exist_ok=True)
     
@@ -93,14 +104,47 @@ def download_image(url, save_dir):
     try:
         # Download image
         urllib.request.urlretrieve(url, filepath)
-        print(f"Downloaded image: {url} -> {filepath}")
-        return filepath
+        return (url, filepath)
     except Exception as e:
         print(f"Failed to download image: {url}, error: {e}")
-        return None
+        return (url, None)
 
 
-def process_markdown_file(file_path, target_dir):
+def batch_download_images(urls, save_dir, max_workers=10):
+    """Download multiple images in parallel
+    
+    Args:
+        urls: List of image URLs
+        save_dir: Directory to save images
+        max_workers: Maximum number of parallel downloads
+    
+    Returns:
+        dict: Mapping of URLs to local file paths
+    """
+    url_to_path = {}
+    
+    # Create a list of tuples (url, save_dir) for each URL
+    download_tasks = [(url, save_dir) for url in urls]
+    
+    # Use ThreadPoolExecutor for parallel downloads with progress bar
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create a progress bar
+        results = list(tqdm(
+            executor.map(download_image, download_tasks),
+            total=len(download_tasks),
+            desc="Downloading images",
+            unit="img"
+        ))
+        
+        # Process results
+        for url, filepath in results:
+            if filepath:
+                url_to_path[url] = filepath
+    
+    return url_to_path
+
+
+def process_markdown_file(file_path, target_dir, max_workers=10):
     """Process a single Markdown file, download remote images and update paths
     
     Returns:
@@ -138,13 +182,14 @@ def process_markdown_file(file_path, target_dir):
     md_file_dir = os.path.dirname(os.path.abspath(file_path))
     resources_dir = os.path.join(md_file_dir, "resources")
     
-    # Download images and update Markdown content
-    modified_content = content
-    images_updated = 0  # Count successfully downloaded and replaced images
+    # Batch download images
+    url_to_path_map = batch_download_images(image_urls, resources_dir, max_workers)
     
-    for url in image_urls:
-        local_path = download_image(url, resources_dir)
-        
+    # Update Markdown content
+    modified_content = content
+    images_updated = 0
+    
+    for url, local_path in url_to_path_map.items():
         if local_path:
             # Calculate relative path
             rel_path = os.path.relpath(local_path, md_file_dir)
@@ -153,11 +198,11 @@ def process_markdown_file(file_path, target_dir):
             # Update image URLs in Markdown
             # Handle standard Markdown image format
             pattern = f'!\\[(.*?)\\]\\({re.escape(url)}\\)'
-            new_content = re.sub(pattern, f'![\g<1>]({rel_path})', modified_content)
+            new_content = re.sub(pattern, lambda m: f'![{m.group(1)}]({rel_path})', modified_content)
             
             # Handle HTML tag format
             pattern = f'<img([^>]*)src=[\'"]({re.escape(url)})[\'"]([^>]*)>'
-            new_content = re.sub(pattern, f'<img\g<1>src="{rel_path}"\g<3>>', new_content)
+            new_content = re.sub(pattern, lambda m: f'<img{m.group(1)}src="{rel_path}"{m.group(3)}>', new_content)
             
             # Check if any replacements were made
             if new_content != modified_content:
@@ -175,7 +220,7 @@ def process_markdown_file(file_path, target_dir):
     return images_found, images_updated
 
 
-def process_directory(target_dir):
+def process_directory(target_dir, max_workers=10):
     """Process all Markdown files in the target directory"""
     # Get all Markdown files
     markdown_files = glob.glob(os.path.join(target_dir, "**/*.md"), recursive=True)
@@ -190,8 +235,9 @@ def process_directory(target_dir):
     total_images_found = 0
     total_images_updated = 0
     
-    for file_path in markdown_files:
-        images_found, images_updated = process_markdown_file(file_path, target_dir)
+    # Process files with progress bar
+    for file_path in tqdm(markdown_files, desc="Processing files", unit="file"):
+        images_found, images_updated = process_markdown_file(file_path, target_dir, max_workers)
         total_images_found += images_found
         total_images_updated += images_updated
     
@@ -210,9 +256,11 @@ def main():
     # Set up command line arguments
     parser = argparse.ArgumentParser(description='Download remote images in Markdown files and replace with local paths')
     parser.add_argument('target_dir', help='Target directory (containing Markdown files)')
+    parser.add_argument('-w', '--workers', type=int, default=10, help='Maximum number of parallel downloads (default: 10)')
     
     args = parser.parse_args()
     target_dir = os.path.abspath(args.target_dir)
+    max_workers = args.workers
     
     # Check if target directory exists
     if not os.path.isdir(target_dir):
@@ -220,7 +268,7 @@ def main():
         sys.exit(1)
     
     # Process target directory
-    process_directory(target_dir)
+    process_directory(target_dir, max_workers)
 
 
 if __name__ == "__main__":

@@ -6,97 +6,11 @@ import sys
 import re
 import glob
 import argparse
-import venv
-import subprocess
 import urllib.request
 import urllib.parse
 import uuid
 import shutil
-import platform
 from pathlib import Path
-
-
-def check_venv():
-    """Check if running in a virtual environment, if not create one and prompt user to activate it"""
-    # Check if running in a virtual environment
-    in_venv = sys.prefix != sys.base_prefix
-    
-    if not in_venv:
-        print("Not running in a virtual environment!")
-        
-        # Create virtual environment directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        venv_dir = os.path.join(script_dir, "venv")
-        
-        # Determine operating system
-        is_windows = platform.system() == "Windows"
-        
-        # If the virtual environment directory doesn't exist, create it
-        if not os.path.exists(venv_dir):
-            print("Creating virtual environment...")
-            try:
-                venv.create(venv_dir, with_pip=True)
-            except Exception as e:
-                print(f"Failed to create virtual environment: {e}")
-                print("Please manually run the following commands to create a virtual environment:")
-                print(f"python -m venv {venv_dir}")
-                sys.exit(1)
-            
-            # Install required dependencies
-            print("Installing required dependencies...")
-            pip_path = os.path.join(venv_dir, "bin", "pip") if not is_windows else os.path.join(venv_dir, "Scripts", "pip.exe")
-            
-            # Confirm pip path exists
-            if not os.path.exists(pip_path):
-                print(f"Warning: Could not find pip at expected location: {pip_path}")
-                if not is_windows:  # macOS/Linux
-                    pip_path = os.path.join(venv_dir, "bin", "pip3")
-                    if not os.path.exists(pip_path):
-                        print("Could not find pip or pip3. Please install dependencies manually:")
-                        print(f"source {os.path.join(venv_dir, 'bin', 'activate')}")
-                        print(f"pip install -r {os.path.join(script_dir, 'requirements.txt')}")
-                        sys.exit(1)
-            
-            # Install dependencies from requirements.txt
-            req_path = os.path.join(script_dir, "requirements.txt")
-            if os.path.exists(req_path):
-                try:
-                    subprocess.check_call([pip_path, "install", "-r", req_path])
-                except subprocess.CalledProcessError as e:
-                    print(f"Failed to install dependencies: {e}")
-                    print("Please install dependencies manually:")
-                    print(f"{'source ' if not is_windows else ''}{os.path.join(venv_dir, 'bin' if not is_windows else 'Scripts', 'activate')}")
-                    print(f"pip install -r {req_path}")
-                    sys.exit(1)
-            else:
-                print(f"Warning: requirements.txt file not found at {req_path}")
-                print("Installing basic dependencies...")
-                try:
-                    subprocess.check_call([pip_path, "install", "markdown", "requests"])
-                except subprocess.CalledProcessError as e:
-                    print(f"Failed to install basic dependencies: {e}")
-                    sys.exit(1)
-        
-        # Prompt user how to activate the virtual environment
-        if is_windows:
-            activate_path = os.path.join(venv_dir, "Scripts", "activate.bat")
-            python_path = os.path.join(venv_dir, "Scripts", "python.exe")
-        else:  # macOS/Linux
-            activate_path = os.path.join(venv_dir, "bin", "activate")
-            python_path = os.path.join(venv_dir, "bin", "python")
-        
-        print("\nPlease activate the virtual environment before running this script:")
-        if not is_windows:  # macOS/Linux
-            print(f"source {activate_path}")
-            print(f"python {os.path.abspath(__file__)} <target_directory>")
-        else:  # Windows
-            print(f"{activate_path}")
-            print(f"{python_path} {os.path.abspath(__file__)} <target_directory>")
-        
-        sys.exit(0)
-    
-    print("Running in virtual environment")
-    return True
 
 
 def is_url(string):
@@ -106,16 +20,27 @@ def is_url(string):
 
 def is_image_url(url):
     """Check if a URL is an image"""
-    image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
+    image_extensions = ['.image', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg']
     parsed_url = urllib.parse.urlparse(url)
     path = parsed_url.path.lower()
-    return any(path.endswith(ext) for ext in image_extensions)
+    
+    # Check if the path ends with an image extension
+    path_has_extension = any(path.endswith(ext) for ext in image_extensions)
+    
+    # Check if URL contains specific image service characteristics
+    known_image_hosts = ['i.imgur.com', 'p3-juejin.byteimg.com', 'cdn.pixabay.com', 'images.unsplash.com']
+    is_known_host = parsed_url.netloc in known_image_hosts
+    
+    # Check if URL contains image-related parameters
+    has_image_param = 'image' in url.lower() or 'img' in url.lower() or 'pic' in url.lower()
+    
+    return path_has_extension or is_known_host or has_image_param
 
 
 def extract_image_urls(markdown_content):
     """Extract image URLs from Markdown content"""
-    # Standard Markdown image format: ![alt](url)
-    standard_pattern = r'!\[.*?\]\((https?://[^)]+)\)'
+    # Standard Markdown image format: ![alt](url) or ![](url)
+    standard_pattern = r'!\[(.*?)\]\((https?://[^)]+)\)'
     
     # HTML tag format: <img src="url" />
     html_pattern = r'<img[^>]*src=[\'"]([^\'"]+)[\'"][^>]*>'
@@ -126,8 +51,19 @@ def extract_image_urls(markdown_content):
     for pattern in [standard_pattern, html_pattern]:
         matches = re.findall(pattern, markdown_content)
         for match in matches:
-            if is_url(match) and is_image_url(match):
-                urls.append(match)
+            # Standard Markdown pattern returns tuples with (alt_text, url)
+            if isinstance(match, tuple) and len(match) > 1:
+                url = match[1]  # Use the second element (URL)
+            else:
+                url = match
+            
+            # Skip non-URL matches
+            if not is_url(url):
+                continue
+                
+            # Only include image URLs
+            if is_image_url(url):
+                urls.append(url)
     
     return urls
 
@@ -270,9 +206,6 @@ def process_directory(target_dir):
 
 
 def main():
-    # Check virtual environment
-    if not check_venv():
-        return
     
     # Set up command line arguments
     parser = argparse.ArgumentParser(description='Download remote images in Markdown files and replace with local paths')

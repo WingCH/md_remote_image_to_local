@@ -106,7 +106,7 @@ def download_image(url_info):
         urllib.request.urlretrieve(url, filepath)
         return (url, filepath)
     except Exception as e:
-        print(f"Failed to download image: {url}, error: {e}")
+        tqdm.write(f"Failed to download image: {url}, error: {e}")
         return (url, None)
 
 
@@ -128,18 +128,24 @@ def batch_download_images(urls, save_dir, max_workers=10):
     
     # Use ThreadPoolExecutor for parallel downloads with progress bar
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Create a progress bar
-        results = list(tqdm(
-            executor.map(download_image, download_tasks),
-            total=len(download_tasks),
-            desc="Downloading images",
-            unit="img"
-        ))
+        # Use as_completed to process concurrent tasks
+        futures = {executor.submit(download_image, task): task for task in download_tasks}
         
-        # Process results
-        for url, filepath in results:
-            if filepath:
-                url_to_path[url] = filepath
+        # Use tqdm to display task completion progress
+        for future in tqdm(
+            concurrent.futures.as_completed(futures),
+            total=len(futures),
+            desc="Downloading images",
+            unit="img",
+            leave=True  # Ensure progress bar remains after completion
+        ):
+            url, save_dir = futures[future]
+            try:
+                url, filepath = future.result()
+                if filepath:
+                    url_to_path[url] = filepath
+            except Exception as e:
+                tqdm.write(f"Error downloading {url}: {e}")
     
     return url_to_path
 
@@ -150,7 +156,8 @@ def process_markdown_file(file_path, target_dir, max_workers=10):
     Returns:
         tuple: (images_found, images_updated) - Number of found images and successfully updated images
     """
-    print(f"Processing file: {file_path}")
+    # Use tqdm.write instead of print to avoid interfering with progress bar display
+    tqdm.write(f"Processing file: {file_path}")
     
     # Read Markdown file
     try:
@@ -162,21 +169,21 @@ def process_markdown_file(file_path, target_dir, max_workers=10):
             with open(file_path, 'r', encoding='big5') as f:
                 content = f.read()
         except Exception as e:
-            print(f"Unable to read file {file_path}: {e}")
+            tqdm.write(f"Unable to read file {file_path}: {e}")
             return 0, 0
     except Exception as e:
-        print(f"Error while reading file {file_path}: {e}")
+        tqdm.write(f"Error while reading file {file_path}: {e}")
         return 0, 0
     
     # Extract image URLs
     image_urls = extract_image_urls(content)
     
     if not image_urls:
-        print(f"No remote images found in {file_path}")
+        tqdm.write(f"No remote images found in {file_path}")
         return 0, 0
     
     images_found = len(image_urls)
-    print(f"Found {images_found} remote images in {file_path}")
+    tqdm.write(f"Found {images_found} remote images in {file_path}")
     
     # Create resource directory for the current Markdown file
     md_file_dir = os.path.dirname(os.path.abspath(file_path))
@@ -213,9 +220,9 @@ def process_markdown_file(file_path, target_dir, max_workers=10):
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(modified_content)
-        print(f"Completed processing {file_path}, updated {images_updated} image references (out of {images_found} found)")
+        tqdm.write(f"Completed processing {file_path}, updated {images_updated} image references (out of {images_found} found)")
     except Exception as e:
-        print(f"Error while writing file {file_path}: {e}")
+        tqdm.write(f"Error while writing file {file_path}: {e}")
     
     return images_found, images_updated
 
@@ -226,29 +233,29 @@ def process_directory(target_dir, max_workers=10):
     markdown_files = glob.glob(os.path.join(target_dir, "**/*.md"), recursive=True)
     
     if not markdown_files:
-        print(f"No Markdown files found in {target_dir}")
+        tqdm.write(f"No Markdown files found in {target_dir}")
         return
     
-    print(f"Found {len(markdown_files)} Markdown files in {target_dir}")
+    tqdm.write(f"Found {len(markdown_files)} Markdown files in {target_dir}")
     
     # Track total number of images and successfully downloaded images
     total_images_found = 0
     total_images_updated = 0
     
     # Process files with progress bar
-    for file_path in tqdm(markdown_files, desc="Processing files", unit="file"):
+    for file_path in tqdm(markdown_files, desc="Processing files", unit="file", leave=True):
         images_found, images_updated = process_markdown_file(file_path, target_dir, max_workers)
         total_images_found += images_found
         total_images_updated += images_updated
     
     # Summary report
-    print(f"\nSummary:")
-    print(f"Total remote images found: {total_images_found}")
-    print(f"Total images successfully downloaded and updated: {total_images_updated}")
+    tqdm.write(f"\nSummary:")
+    tqdm.write(f"Total remote images found: {total_images_found}")
+    tqdm.write(f"Total images successfully downloaded and updated: {total_images_updated}")
     if total_images_found > total_images_updated:
-        print(f"Images failed to download or update: {total_images_found - total_images_updated}")
+        tqdm.write(f"Images failed to download or update: {total_images_found - total_images_updated}")
     
-    print("Completed processing all Markdown files")
+    tqdm.write("Completed processing all Markdown files")
 
 
 def main():

@@ -1,0 +1,18 @@
+{
+    "get-list": {
+        "name": "get-core-list",
+        "description": "Get a list of functions in the core module",
+        "fileName": "list.md"
+    },
+    "get-details": {
+        "name": "get-core-details",
+        "description": "Get detailed information about a specific function in the core module",
+        "paramDescription": "Function name",
+        "namingPattern": "kebab"
+    },
+    "get-overview": {
+        "name": "get-core-overview",
+        "description": "Get an overview of the core module",
+        "fileName": "overview.md"
+    }
+}

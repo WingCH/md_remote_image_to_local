@@ -1,0 +1,12 @@
+{
+    "name": "Markdown Remote Image Localizer",
+    "description": "A utility library for downloading remote images in Markdown files to local storage and updating image path references",
+    "version": "1.0.0",
+    "moduleList": [
+        "core",
+        "image-utils",
+        "file-utils"
+    ],
+    "fileName": "overview.md",
+    "moduleFolderNamingPattern": "kebab"
+}

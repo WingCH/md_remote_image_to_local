@@ -1,0 +1,18 @@
+{
+    "get-list": {
+        "name": "get-image-utils-list",
+        "description": "Get a list of functions in the image utilities module",
+        "fileName": "list.md"
+    },
+    "get-details": {
+        "name": "get-image-utils-details",
+        "description": "Get detailed information about a specific function in the image utilities module",
+        "paramDescription": "Function name",
+        "namingPattern": "kebab"
+    },
+    "get-overview": {
+        "name": "get-image-utils-overview",
+        "description": "Get an overview of the image utilities module",
+        "fileName": "overview.md"
+    }
+}

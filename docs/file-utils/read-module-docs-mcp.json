@@ -1,0 +1,18 @@
+{
+    "get-list": {
+        "name": "get-file-utils-list",
+        "description": "Get a list of functions in the file utilities module",
+        "fileName": "list.md"
+    },
+    "get-details": {
+        "name": "get-file-utils-details",
+        "description": "Get detailed information about a specific function in the file utilities module",
+        "paramDescription": "Function name",
+        "namingPattern": "kebab"
+    },
+    "get-overview": {
+        "name": "get-file-utils-overview",
+        "description": "Get an overview of the file utilities module",
+        "fileName": "overview.md"
+    }
+}
